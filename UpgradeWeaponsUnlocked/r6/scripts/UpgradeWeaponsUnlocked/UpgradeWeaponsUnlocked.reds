@@ -581,21 +581,24 @@ private final func CraftItem(target: wref<GameObject>, itemRecord: ref<Item_Reco
     };
 
     itemData = transactionSystem.GetItemData(target, craftedItemID);
+    let isItemWeapon = RPGManager.GetItemCategory(itemData.GetID());
 
-    let itemQuality = RPGManager.GetItemQuality(itemData);
-    let itemQualityValue = RPGManager.ItemQualityEnumToValue(itemQuality);
-    // LogChannel(n"DEBUG", s"CraftItem itemQuality: \(itemQuality)");
+    if (Equals(isItemWeapon, gamedataItemCategory.Weapon)) {
+        let itemQuality = RPGManager.GetItemQuality(itemData);
+        let itemQualityValue = RPGManager.ItemQualityEnumToValue(itemQuality);
+        // LogChannel(n"DEBUG", s"CraftItem itemQuality: \(itemQuality)");
 
-    let plusToUpgradeMod: ref<gameStatModifierData>;
-    let upgradeToQualityMod: ref<gameStatModifierData>;
+        let plusToUpgradeMod: ref<gameStatModifierData>;
+        let upgradeToQualityMod: ref<gameStatModifierData>;
 
-    plusToUpgradeMod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, itemQualityValue);
-    upgradeToQualityMod = RPGManager.CreateStatModifier(gamedataStatType.Quality, gameStatModifierType.Additive, itemQualityValue);
+        plusToUpgradeMod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, itemQualityValue);
+        upgradeToQualityMod = RPGManager.CreateStatModifier(gamedataStatType.Quality, gameStatModifierType.Additive, itemQualityValue);
 
-    statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.IsItemPlus, true);
-    statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), plusToUpgradeMod);
-    statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.Quality, true);
-    statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToQualityMod);
+        statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.IsItemPlus, true);
+        statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), plusToUpgradeMod);
+        statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.Quality, true);
+        statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToQualityMod);
+    }
     
     this.SetItemLevel(itemData);
     this.MarkItemAsCrafted(itemData);
