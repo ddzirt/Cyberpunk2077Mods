@@ -62,25 +62,6 @@ import SkillsBasedAttributes.Config.SBAConfig
     20: 3 PP
 */
 
-/*
- In 2.0 CDPR introduced categories set for primary stats(still limited to 20)
- with completely redoing perk system to roughly 45 perks per stat
- and limiting max stat gain to 66 while max perks to 
- While total required for stats is: 100 and perks is: 221
- There is a website to check how it works: https://www.cyberpunk.net/en/build-planner
- Main idea: level stats based on exp gained for proficiency in weapon category
- meaning you get +X to stat relative to category of weapon you used to level up
- and it would give perks to level your entire tree
- which has to be related to same categories CDPR did:
- 0-3 you got nothing, total noob and player starts there.
- 4-8 got some skill
- 8-14 pro
- 15-20 legend
- Easiest way to do it is to attach Stat Points(SP) to levels in new Skill Progression System
- And most balanced approach is to set attributes to 0 and go from there with hard being the setting
- meaning we get 1 AP for each 3 levels in Skill Progression.
-*/
-
 // Hook to new game as well, so it works straight away instead
 // of loading game to make mod work
 @wrapMethod(PlayerDevelopmentData)
