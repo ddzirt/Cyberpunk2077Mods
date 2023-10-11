@@ -486,6 +486,125 @@ private final func UpgradeItem(owner: wref<GameObject>, itemID: ItemID) -> Void 
     this.ProcessCraftSkill(Cast<Float>(recipeXP));
 }
 
+// This has to replaced because items without proper tags can not be crafted and they wont work in preview interface
+@replaceMethod(CraftingSystem)
+private final func CraftItem(target: wref<GameObject>, itemRecord: ref<Item_Record>, amount: Int32, opt ammoBulletAmount: Int32) -> wref<gameItemData> {
+    let craftedItemID: ItemID;
+    let i: Int32;
+    let ingredient: ItemID;
+    let ingredientQuality: gamedataQuality;
+    let ingredientRecords: array<wref<RecipeElement_Record>>;
+    let isAmmo: Bool;
+    let itemData: wref<gameItemData>;
+    let j: Int32;
+    let recipeXP: Int32;
+    let requiredIngredients: array<IngredientData>;
+    let savedAmount: Int32;
+    let savedAmountLocked: Bool;
+    let tempStat: Float;
+    let xpID: TweakDBID;
+    let transactionSystem: ref<TransactionSystem> = GameInstance.GetTransactionSystem(this.GetGameInstance());
+    let statsSystem: ref<StatsSystem> = GameInstance.GetStatsSystem(this.GetGameInstance());
+    let randF: Float = RandF();
+
+    itemRecord.CraftingData().CraftingRecipe(ingredientRecords);
+    requiredIngredients = this.GetItemCraftingCost(itemRecord);
+    isAmmo = itemRecord.TagsContains(n"Ammo");
+
+    i = 0;
+    while i < ArraySize(requiredIngredients) {
+      ingredient = ItemID.CreateQuery(requiredIngredients[i].id.GetID());
+      if (RPGManager.IsItemWeapon(ingredient) || RPGManager.IsItemClothing(ingredient) || RPGManager.IsItemMisc(ingredient)) {
+        itemData = transactionSystem.GetItemData(target, ingredient);
+        if (IsDefined(itemData) && itemData.HasTag(n"Quest")) {
+          itemData.RemoveDynamicTag(n"Quest");
+        };
+        this.ClearNonIconicSlots(itemData);
+        break;
+      };
+      i += 1;
+    };
+
+    tempStat = statsSystem.GetStatValue(Cast<StatsObjectID>(target.GetEntityID()), gamedataStatType.CraftingMaterialRetrieveChance);
+    savedAmount = 0;
+    i = 0;
+    while i < ArraySize(requiredIngredients) {
+      ingredient = ItemID.CreateQuery(requiredIngredients[i].id.GetID());
+      if (RPGManager.IsItemWeapon(ingredient) || RPGManager.IsItemClothing(ingredient) || RPGManager.IsItemProgram(ingredient) || RPGManager.IsItemGadget(ingredient)) {
+        randF = 100.00;
+      } else {
+        if (tempStat > 0.00 && !savedAmountLocked) {
+          j = 0;
+          while j < amount {
+            if RandF() < tempStat {
+              savedAmount += 1;
+            };
+            j += 1;
+          };
+          savedAmountLocked = true;
+        };
+      };
+
+      transactionSystem.RemoveItemByTDBID(target, ItemID.GetTDBID(ingredient), requiredIngredients[i].quantity * (amount - savedAmount), true);
+      if (randF >= tempStat && (RPGManager.IsItemWeapon(ingredient) || RPGManager.IsItemClothing(ingredient) || RPGManager.IsItemProgram(ingredient))) {
+        transactionSystem.RemoveItemByTDBID(target, ItemID.GetTDBID(ingredient), requiredIngredients[i].quantity * amount, true);
+      };
+
+      ingredientQuality = RPGManager.GetItemQualityFromRecord(TweakDBInterface.GetItemRecord(requiredIngredients[i].id.GetID()));
+      switch (ingredientQuality) {
+        case gamedataQuality.Common:
+          xpID = t"Constants.CraftingSystem.commonIngredientXP";
+          break;
+        case gamedataQuality.Uncommon:
+          xpID = t"Constants.CraftingSystem.uncommonIngredientXP";
+          break;
+        case gamedataQuality.Rare:
+          xpID = t"Constants.CraftingSystem.rareIngredientXP";
+          break;
+        case gamedataQuality.Epic:
+          xpID = t"Constants.CraftingSystem.epicIngredientXP";
+          break;
+        case gamedataQuality.Legendary:
+          xpID = t"Constants.CraftingSystem.legendaryIngredientXP";
+          break;
+        default:
+      };
+      recipeXP += TweakDBInterface.GetInt(xpID, 0) * requiredIngredients[i].baseQuantity * amount;
+      i += 1;
+    };
+
+    craftedItemID = ItemID.FromTDBID(itemRecord.GetID());
+    transactionSystem.GiveItem(target, craftedItemID, isAmmo ? amount * ammoBulletAmount : amount);
+    
+    if (Equals(itemRecord.ItemType().Type(), gamedataItemType.Gad_Grenade) || Equals(itemRecord.ItemType().Type(), gamedataItemType.Con_Inhaler) || Equals(itemRecord.ItemType().Type(), gamedataItemType.Con_Injector)) {
+      this.ProcessProgramCrafting(itemRecord.GetID());
+    };
+
+    itemData = transactionSystem.GetItemData(target, craftedItemID);
+
+    let itemQuality = RPGManager.GetItemQuality(itemData);
+    let itemQualityValue = RPGManager.ItemQualityEnumToValue(itemQuality);
+    // LogChannel(n"DEBUG", s"CraftItem itemQuality: \(itemQuality)");
+
+    let plusToUpgradeMod: ref<gameStatModifierData>;
+    let upgradeToQualityMod: ref<gameStatModifierData>;
+
+    plusToUpgradeMod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, itemQualityValue);
+    upgradeToQualityMod = RPGManager.CreateStatModifier(gamedataStatType.Quality, gameStatModifierType.Additive, itemQualityValue);
+
+    statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.IsItemPlus, true);
+    statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), plusToUpgradeMod);
+    statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.Quality, true);
+    statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToQualityMod);
+    
+    this.SetItemLevel(itemData);
+    this.MarkItemAsCrafted(itemData);
+    this.SendItemCraftedDataTrackingRequest(craftedItemID);
+    this.ProcessCraftSkill(Cast<Float>(recipeXP));
+    
+    return itemData;
+}
+
 // Use this for debug data
 // @replaceMethod(UpgradingScreenController)
 // private final func UpdateTooltipData() -> Void {

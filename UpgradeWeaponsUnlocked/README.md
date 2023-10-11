@@ -1,7 +1,7 @@
 # UpgradeWeaponsUnlocked
 
-Unlocks non iconic weapon upgrades feature that was removed in 2.0 patch
-UpgradeWeaponsUnlocked is a mod that is using Redscript to work<br>
+Unlocks non iconic weapon upgrades feature that was removed in 2.0 patch<br>
+UpgradeWeaponsUnlocked needs Redscript to work<br>
 
 ## Getting Started
 
