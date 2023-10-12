@@ -42,7 +42,9 @@ module udonSoup.UpgradeWeaponsUnlocked
 
 // In 2.0 nonIconic weapons are not upgradeable
 // So we add things that allow just that
-// By firstly allowing nonIconic weapons to have upgradeToPlusMod
+// However we have to meddle with UI and this onItemAddedToInventory
+// TODO: Investigate a way to reduce amount of custom logic. Because it seems totally possible
+// in retrospect. At least with less unoptimized code
 @addMethod(PlayerPuppet)
 public final func SetUsualWeaponsLevelReq(itemData: ref<gameItemData>) -> Void {
     let qualityToUpgradeMod: ref<gameStatModifierData>;
@@ -69,7 +71,7 @@ public final func SetUsualWeaponsLevelReq(itemData: ref<gameItemData>) -> Void {
         GameInstance.GetStatsSystem(this.GetGame()).RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.Quality, true);
         GameInstance.GetStatsSystem(this.GetGame()).AddSavedModifier(itemData.GetStatsObjectID(), upgradeToQualityMod);
               
-        upgradeToPlusMod = RPGManager.CreateStatModifier(gamedataStatType.IsItemPlus, gameStatModifierType.Additive, 1.0);
+        upgradeToPlusMod = RPGManager.CreateStatModifier(gamedataStatType.IsItemPlus, gameStatModifierType.Additive, isPlus);
         GameInstance.GetStatsSystem(this.GetGame()).RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.IsItemPlus, true);
         GameInstance.GetStatsSystem(this.GetGame()).AddSavedModifier(itemData.GetStatsObjectID(), upgradeToPlusMod);
     };
@@ -314,7 +316,7 @@ private final func GetUpgradableList() -> array<ref<IScriptable>> {
 // Had to replace as it was messing with logic and UI
 @replaceMethod(RPGManager)
 public final static func GetItemTierForUpgrades(itemData: wref<gameItemData>) -> gamedataQuality {
-    if IsDefined(itemData) {
+    if (IsDefined(itemData)) {
         return RPGManager.GetItemQuality(itemData.GetStatValueByType(gamedataStatType.Quality));
     };
 
@@ -402,30 +404,17 @@ private final func UpgradeItem(owner: wref<GameObject>, itemID: ItemID) -> Void 
     let newVal: Float; // = oldVal + 1.00;
     let itemQuality: Float;
 
-    // LogChannel(n"DEBUG", s"UpgradeItem WasItemUpgraded: \(oldVal)");
+    // LogChannel(n"DEBUG", s"UpgradeItem WasItemUpgraded(oldVal): \(oldVal)");
 
     let actualUpgradeNumbers: array<Float> = this.DetermineItemQualityAndTierCorretly(itemData);
-    let isPlus: Bool = Cast<Bool>(actualUpgradeNumbers[1]);
-    let wasItemUpgraded: Float = oldVal;
-    let itemTierQuality: gamedataQuality = RPGManager.GetItemTierForUpgrades(wasItemUpgraded);
+    let isPlus: Float = actualUpgradeNumbers[1];
+    let isPlusBool: Bool = (isPlus > 0.0) ? true : false;
+    // let wasItemUpgraded: Float = oldVal;
+    // let itemTierQuality: gamedataQuality = RPGManager.GetItemTierForUpgrades(wasItemUpgraded);
     let itemQualityName: gamedataQuality = RPGManager.GetItemQuality(actualUpgradeNumbers[0]);
 
-    if (Equals(itemQualityName, gamedataQuality.Legendary)) {
-        if (isPlus) {
-            // TODO: Remove after fix
-            if (Equals(itemTierQuality, gamedataQuality.LegendaryPlus)) {
-                return;
-            }
-
-            if (Equals(itemTierQuality, gamedataQuality.LegendaryPlusPlus)) {
-                // LogChannel(n"DEBUG", s"UpgradeItem lock upgrade after + for now");
-                return;
-            }
-        }
-    }
-
     statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.WasItemUpgraded, true);
-    if (isPlus && !(Equals(itemQualityName, gamedataQuality.Legendary))) {
+    if (isPlusBool && !(Equals(itemQualityName, gamedataQuality.Legendary))) {
         // LogChannel(n"DEBUG", s"UpgradeItem isPlus to next tier");
 
         // If itemTier value is lower than it should be - replace it with actual one
@@ -442,14 +431,17 @@ private final func UpgradeItem(owner: wref<GameObject>, itemID: ItemID) -> Void 
         statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), plusToUpgradeMod);
         statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.Quality, true);
         statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToQualityMod);
-    } else if (isPlus && (Equals(itemQualityName, gamedataQuality.Legendary))) {
+    } else if (isPlusBool && (Equals(itemQualityName, gamedataQuality.Legendary))) {
         // LogChannel(n"DEBUG", s"UpgradeItem legendary isPlus to isPlusPlus");
 
         itemQuality = actualUpgradeNumbers[0];
         newVal = oldVal + 1.00;
 
+        // LogChannel(n"DEBUG", s"UpgradeItem itemQuality: \(itemQuality)");
+        // LogChannel(n"DEBUG", s"UpgradeItem newVal: \(newVal)");
+
         mod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, newVal);
-        upgradeToPlusMod = RPGManager.CreateStatModifier(gamedataStatType.IsItemPlus, gameStatModifierType.Additive, 1.0);
+        upgradeToPlusMod = RPGManager.CreateStatModifier(gamedataStatType.IsItemPlus, gameStatModifierType.Additive, 2.0);
         upgradeToQualityMod = RPGManager.CreateStatModifier(gamedataStatType.Quality, gameStatModifierType.Additive, itemQuality);
 
         statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), mod);
@@ -511,9 +503,10 @@ private final func UpgradeItem(owner: wref<GameObject>, itemID: ItemID) -> Void 
     };
        
     this.ProcessCraftSkill(Cast<Float>(recipeXP));
+    // LogChannel(n"DEBUG", s"-----------------------------------");
 }
 
-// This has to replaced because items without proper tags can not be crafted and they wont work in preview interface
+// This has to replaced because items without proper tags can not be upgraded and they wont work in preview interface
 @replaceMethod(CraftingSystem)
 private final func CraftItem(target: wref<GameObject>, itemRecord: ref<Item_Record>, amount: Int32, opt ammoBulletAmount: Int32) -> wref<gameItemData> {
     let craftedItemID: ItemID;
@@ -618,6 +611,8 @@ private final func CraftItem(target: wref<GameObject>, itemRecord: ref<Item_Reco
         let plusToUpgradeMod: ref<gameStatModifierData>;
         let upgradeToQualityMod: ref<gameStatModifierData>;
 
+        // TODO: Add additional check if player is lvl 50 and wants to craft ++ straight away
+
         plusToUpgradeMod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, itemQualityValue);
         upgradeToQualityMod = RPGManager.CreateStatModifier(gamedataStatType.Quality, gameStatModifierType.Additive, itemQualityValue);
 
@@ -664,16 +659,16 @@ private final func CraftItem(target: wref<GameObject>, itemRecord: ref<Item_Reco
 //     let itemData: ref<gameItemData> = InventoryItemData.GetGameItemData(this.m_selectedItemData);
 
 //     let itemQualityName: gamedataQuality = RPGManager.GetItemQuality(itemData);
-//     let itemQualityValue: Float = RPGManager.ItemQualityEnumToValue(itemQualityName);
-//     let itemTierQualityValue: Float = itemQualityValue * 2.0;
-//     let isPlus: Float = RPGManager.GetItemPlus(itemData);
-//     let wasItemUpgraded = itemData.GetStatValueByType(gamedataStatType.WasItemUpgraded);
+//     // let itemQualityValue: Float = RPGManager.ItemQualityEnumToValue(itemQualityName);
+//     // let itemTierQualityValue: Float = itemQualityValue * 2.0;
+//     // let isPlus: Float = RPGManager.GetItemPlus(itemData);
+//     // let wasItemUpgraded = itemData.GetStatValueByType(gamedataStatType.WasItemUpgraded);
 
-//     LogChannel(n"DEBUG", s"UpdateTooltipData itemQualityName: \(itemQualityName)");
-//     LogChannel(n"DEBUG", s"UpdateTooltipData wasItemUpgraded: \(wasItemUpgraded)");
-//     LogChannel(n"DEBUG", s"UpdateTooltipData itemTierQualityValue: \(itemTierQualityValue)");
-//     LogChannel(n"DEBUG", s"UpdateTooltipData isPlus: \(isPlus)");
-//     LogChannel(n"DEBUG", s"-----------------------------------");
+//     // LogChannel(n"DEBUG", s"UpdateTooltipData itemQualityName: \(itemQualityName)");
+//     // LogChannel(n"DEBUG", s"UpdateTooltipData wasItemUpgraded: \(wasItemUpgraded)");
+//     // LogChannel(n"DEBUG", s"UpdateTooltipData itemTierQualityValue: \(itemTierQualityValue)");
+//     // LogChannel(n"DEBUG", s"UpdateTooltipData isPlus: \(isPlus)");
+//     // LogChannel(n"DEBUG", s"-----------------------------------");
 
 //     let isQualityShown: Bool = this.IsQualityShown(itemQualityName);
 //     let check: Bool = this.m_isCraftable || isQualityShown;
@@ -710,7 +705,8 @@ private func UpgradeItemForPreview() -> Void {
     let itemQualityName: gamedataQuality = RPGManager.GetItemQuality(itemData);
     let itemQualityValue: Float = RPGManager.ItemQualityEnumToValue(itemQualityName);
     let itemTierQualityValue: Float = itemQualityValue * 2.0;
-    let isPlus: Bool = Cast<Bool>(RPGManager.GetItemPlus(itemData));
+    let isPlus: Float = RPGManager.GetItemPlus(itemData);
+    let isPlusBool: Bool = (isPlus > 0.0) ? true : false;
     let wasItemUpgraded: Float = itemData.GetStatValueByType(gamedataStatType.WasItemUpgraded);
     let statsSystem = this.m_StatsSystem;
 
@@ -719,52 +715,55 @@ private func UpgradeItemForPreview() -> Void {
     // LogChannel(n"DEBUG", s"UpgradeItemForPreview itemTierQualityValue: \(itemTierQualityValue)");
     // LogChannel(n"DEBUG", s"UpgradeItemForPreview isPlus: \(isPlus)");
 
-    if (wasItemUpgraded > itemTierQualityValue) {
-        wasItemUpgraded = itemTierQualityValue;
-    }
+    let isItemMaxTier: Bool = RPGManager.IsItemMaxTier(itemData);
+    if (!isItemMaxTier) {
+        if (wasItemUpgraded > itemTierQualityValue) {
+            wasItemUpgraded = itemTierQualityValue;
+        }
 
-    let newVal: Float = wasItemUpgraded + 1.00;
+        let newVal: Float = wasItemUpgraded + 1.00;
+        // LogChannel(n"DEBUG", s"UpgradeItemForPreview newVal: \(newVal)");
+        let mod: ref<gameStatModifierData>;
+        let plusToUpgradeMod: ref<gameStatModifierData>;
+        let upgradeToPlusMod: ref<gameStatModifierData>;
+        let upgradeToQualityMod: ref<gameStatModifierData>;
 
-    let mod: ref<gameStatModifierData>;
-    let plusToUpgradeMod: ref<gameStatModifierData>;
-    let upgradeToPlusMod: ref<gameStatModifierData>;
-    let upgradeToQualityMod: ref<gameStatModifierData>;
+        statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.WasItemUpgraded, true);
+        if (isPlusBool && (Equals(itemQualityName, gamedataQuality.Legendary))) {
+            // LogChannel(n"DEBUG", s"UpgradeItemForPreview we upgrade item to Plus Plus");
 
-    statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.WasItemUpgraded, true);
-    if (isPlus && (Equals(itemQualityName, gamedataQuality.Legendary))) {
-        // LogChannel(n"DEBUG", s"UpgradeItemForPreview if Plus Plus do nothing");
+            mod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, newVal);
+            upgradeToPlusMod = RPGManager.CreateStatModifier(gamedataStatType.IsItemPlus, gameStatModifierType.Additive, 2.0);
+            upgradeToQualityMod = RPGManager.CreateStatModifier(gamedataStatType.Quality, gameStatModifierType.Additive, itemQualityValue);
 
-        mod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, newVal);
-        upgradeToPlusMod = RPGManager.CreateStatModifier(gamedataStatType.IsItemPlus, gameStatModifierType.Additive, 1.0);
-        upgradeToQualityMod = RPGManager.CreateStatModifier(gamedataStatType.Quality, gameStatModifierType.Additive, itemQualityValue);
+            statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), mod);
+            statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.IsItemPlus, true);
+            statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToPlusMod);
+            statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.Quality, true);
+            statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToQualityMod);
+        } else if (!isPlusBool) {
+            // LogChannel(n"DEBUG", s"UpgradeItemForPreview we upgrade item to Plus");
 
-        statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), mod);
-        statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.IsItemPlus, true);
-        statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToPlusMod);
-        statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.Quality, true);
-        statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToQualityMod);
-    } else if (!isPlus) {
-        // LogChannel(n"DEBUG", s"UpgradeItemForPreview we upgrade item to Plus");
+            mod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, newVal);
+            upgradeToPlusMod = RPGManager.CreateStatModifier(gamedataStatType.IsItemPlus, gameStatModifierType.Additive, 1.0);
+            upgradeToQualityMod = RPGManager.CreateStatModifier(gamedataStatType.Quality, gameStatModifierType.Additive, itemQualityValue);
 
-        mod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, newVal);
-        upgradeToPlusMod = RPGManager.CreateStatModifier(gamedataStatType.IsItemPlus, gameStatModifierType.Additive, 1.0);
-        upgradeToQualityMod = RPGManager.CreateStatModifier(gamedataStatType.Quality, gameStatModifierType.Additive, itemQualityValue);
+            statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), mod);
+            statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.IsItemPlus, true);
+            statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToPlusMod);
+            statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.Quality, true);
+            statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToQualityMod);
+        } else {
+            // LogChannel(n"DEBUG", s"UpgradeItemForPreview we upgrade item to next tier");
 
-        statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), mod);
-        statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.IsItemPlus, true);
-        statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToPlusMod);
-        statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.Quality, true);
-        statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToQualityMod);
-    } else {
-        // LogChannel(n"DEBUG", s"UpgradeItemForPreview we upgrade item to next tier");
+            plusToUpgradeMod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, newVal);
+            upgradeToQualityMod = RPGManager.CreateStatModifier(gamedataStatType.Quality, gameStatModifierType.Additive, itemQualityValue + 1.0);
 
-        plusToUpgradeMod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, newVal);
-        upgradeToQualityMod = RPGManager.CreateStatModifier(gamedataStatType.Quality, gameStatModifierType.Additive, itemQualityValue + 1.0);
-
-        statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.IsItemPlus, true);
-        statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), plusToUpgradeMod);
-        statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.Quality, true);
-        statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToQualityMod);
+            statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.IsItemPlus, true);
+            statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), plusToUpgradeMod);
+            statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.Quality, true);
+            statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToQualityMod);
+        }
     }
     // LogChannel(n"DEBUG", s"-----------------------------------");
 }
@@ -777,7 +776,8 @@ private func DegradeItemForPreview() -> Void {
     let itemQualityName: gamedataQuality = RPGManager.GetItemQuality(itemData);
     let itemQualityValue: Float = RPGManager.ItemQualityEnumToValue(itemQualityName);
     let itemTierQualityValue: Float = itemQualityValue * 2.0;
-    let isPlus: Bool = Cast<Bool>(RPGManager.GetItemPlus(itemData));
+    let isPlus: Float = RPGManager.GetItemPlus(itemData);
+    let isPlusBool: Bool = (isPlus > 0.0) ? true : false;
     let wasItemUpgraded: Float = itemData.GetStatValueByType(gamedataStatType.WasItemUpgraded);
     let statsSystem = this.m_StatsSystem;
 
@@ -786,56 +786,56 @@ private func DegradeItemForPreview() -> Void {
     // LogChannel(n"DEBUG", s"DegradeItemForPreview wasItemUpgraded: \(wasItemUpgraded)");
     // LogChannel(n"DEBUG", s"DegradeItemForPreview isPlus: \(isPlus)");
 
-    if (wasItemUpgraded < itemTierQualityValue) {
-        wasItemUpgraded = itemTierQualityValue;
-    }
+    let isItemMaxTier: Bool = RPGManager.IsItemMaxTier(itemData);
+    if (!isItemMaxTier) {
+        if (wasItemUpgraded < itemTierQualityValue) {
+            wasItemUpgraded = itemTierQualityValue;
+        }
 
-    let newVal: Float = wasItemUpgraded - 1.00;
+        let newVal: Float = wasItemUpgraded - 1.00;
+        // LogChannel(n"DEBUG", s"DegradeItemForPreview newVal: \(newVal)");
 
-    let mod: ref<gameStatModifierData>;
-    let plusToUpgradeMod: ref<gameStatModifierData>;
-    let upgradeToPlusMod: ref<gameStatModifierData>;
-    let upgradeToQualityMod: ref<gameStatModifierData>;
+        let mod: ref<gameStatModifierData>;
+        let plusToUpgradeMod: ref<gameStatModifierData>;
+        let upgradeToPlusMod: ref<gameStatModifierData>;
+        let upgradeToQualityMod: ref<gameStatModifierData>;
 
-    statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.WasItemUpgraded, true);
-    if (isPlus && (Equals(itemQualityName, gamedataQuality.Legendary))) {
-        // LogChannel(n"DEBUG", s"DegradeItemForPreview if item is Plus Plus do nothing");
-        // if (Equals(wasItemUpgraded, gamedataQuality.LegendaryPlusPlus)) {
-        //     // LogChannel(n"DEBUG", s"UpgradeItem lock upgrade after + for now");
-        //     return;
-        // } 
+        statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.WasItemUpgraded, true);
+        if (isPlusBool && (Equals(itemQualityName, gamedataQuality.Legendary))) {
+            // LogChannel(n"DEBUG", s"DegradeItemForPreview we degrade item from Plus Plus");
 
-        mod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, newVal);
-        upgradeToPlusMod = RPGManager.CreateStatModifier(gamedataStatType.IsItemPlus, gameStatModifierType.Additive, 1.0);
-        upgradeToQualityMod = RPGManager.CreateStatModifier(gamedataStatType.Quality, gameStatModifierType.Additive, itemQualityValue);
+            mod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, newVal);
+            upgradeToPlusMod = RPGManager.CreateStatModifier(gamedataStatType.IsItemPlus, gameStatModifierType.Additive, 1.0);
+            upgradeToQualityMod = RPGManager.CreateStatModifier(gamedataStatType.Quality, gameStatModifierType.Additive, itemQualityValue);
 
-        statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), mod);
-        statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.IsItemPlus, true);
-        statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToPlusMod);
-        statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.Quality, true);
-        statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToQualityMod);
-    } else if (isPlus) {
-        // LogChannel(n"DEBUG", s"DegradeItemForPreview we degrade item from Plus");
+            statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), mod);
+            statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.IsItemPlus, true);
+            statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToPlusMod);
+            statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.Quality, true);
+            statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToQualityMod);
+        } else if (isPlusBool) {
+            // LogChannel(n"DEBUG", s"DegradeItemForPreview we degrade item from Plus");
 
-        plusToUpgradeMod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, newVal);
-        upgradeToQualityMod = RPGManager.CreateStatModifier(gamedataStatType.Quality, gameStatModifierType.Additive, itemQualityValue);
+            plusToUpgradeMod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, newVal);
+            upgradeToQualityMod = RPGManager.CreateStatModifier(gamedataStatType.Quality, gameStatModifierType.Additive, itemQualityValue);
 
-        statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.IsItemPlus, true);
-        statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), plusToUpgradeMod);
-        statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.Quality, true);
-        statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToQualityMod);
-    } else {
-        // LogChannel(n"DEBUG", s"DegradeItemForPreview we degrade item in quality");
+            statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.IsItemPlus, true);
+            statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), plusToUpgradeMod);
+            statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.Quality, true);
+            statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToQualityMod);
+        } else {
+            // LogChannel(n"DEBUG", s"DegradeItemForPreview we degrade item in quality");
 
-        mod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, newVal);
-        upgradeToPlusMod = RPGManager.CreateStatModifier(gamedataStatType.IsItemPlus, gameStatModifierType.Additive, 1.0);
-        upgradeToQualityMod = RPGManager.CreateStatModifier(gamedataStatType.Quality, gameStatModifierType.Additive, itemQualityValue - 1.0);
+            mod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, newVal);
+            upgradeToPlusMod = RPGManager.CreateStatModifier(gamedataStatType.IsItemPlus, gameStatModifierType.Additive, 1.0);
+            upgradeToQualityMod = RPGManager.CreateStatModifier(gamedataStatType.Quality, gameStatModifierType.Additive, itemQualityValue - 1.0);
 
-        statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), mod);
-        statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.IsItemPlus, true);
-        statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToPlusMod);
-        statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.Quality, true);
-        statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToQualityMod);
+            statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), mod);
+            statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.IsItemPlus, true);
+            statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToPlusMod);
+            statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.Quality, true);
+            statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToQualityMod);
+        }
     }
     // LogChannel(n"DEBUG", s"-----------------------------------");
 }
