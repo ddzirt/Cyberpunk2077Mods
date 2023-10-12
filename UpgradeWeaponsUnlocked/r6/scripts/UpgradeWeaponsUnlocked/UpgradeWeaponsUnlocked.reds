@@ -45,27 +45,36 @@ module udonSoup.UpgradeWeaponsUnlocked
 // By firstly allowing nonIconic weapons to have upgradeToPlusMod
 @addMethod(PlayerPuppet)
 public final func SetUsualWeaponsLevelReq(itemData: ref<gameItemData>) -> Void {
-    let plusToUpgradeMod: ref<gameStatModifierData>;
     let qualityToUpgradeMod: ref<gameStatModifierData>;
     let upgradeToPlusMod: ref<gameStatModifierData>;
     let upgradeToQualityMod: ref<gameStatModifierData>;
     let iconicCheck: Bool = itemData.HasTag(n"IconicWeapon");
 
-    if (!iconicCheck && itemData.GetStatValueByType(gamedataStatType.WasItemUpgraded) < 1.00) {
-        // TODO: Check out "iconic_upgrades_amount_to_plus" or create one for non iconic weapons
-        qualityToUpgradeMod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, itemData.GetStatValueByType(gamedataStatType.Quality) * 2.00);
+    let itemQuality: gamedataQuality = RPGManager.GetItemQuality(itemData);
+    let itemQualityValue: Float = RPGManager.ItemQualityEnumToValue(itemQuality);
+    let itemWasUpgraded: Float = itemData.GetStatValueByType(gamedataStatType.WasItemUpgraded);
+    let isPlus: Float = itemData.GetStatValueByType(gamedataStatType.IsItemPlus);
+    let newItemUpgraded: Float;
+    
+    if (Cast<Bool>(isPlus)) {
+        newItemUpgraded = itemQualityValue * 2.0 + 1.0; 
+    } else { newItemUpgraded = itemQualityValue + 1.0; }
+
+    if (!iconicCheck && (itemWasUpgraded < 1.00)) {
+        qualityToUpgradeMod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, newItemUpgraded);
+        GameInstance.GetStatsSystem(this.GetGame()).RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.WasItemUpgraded, true);
         GameInstance.GetStatsSystem(this.GetGame()).AddSavedModifier(itemData.GetStatsObjectID(), qualityToUpgradeMod);
-        upgradeToQualityMod = RPGManager.CreateStatModifier(gamedataStatType.Quality, gameStatModifierType.Additive, itemData.GetStatValueByType(gamedataStatType.WasItemUpgraded) * -0.50);
+       
+        upgradeToQualityMod = RPGManager.CreateStatModifier(gamedataStatType.Quality, gameStatModifierType.Additive, itemQualityValue);
+        GameInstance.GetStatsSystem(this.GetGame()).RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.Quality, true);
         GameInstance.GetStatsSystem(this.GetGame()).AddSavedModifier(itemData.GetStatsObjectID(), upgradeToQualityMod);
-        plusToUpgradeMod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, itemData.GetStatValueByType(gamedataStatType.IsItemPlus));
-        GameInstance.GetStatsSystem(this.GetGame()).AddSavedModifier(itemData.GetStatsObjectID(), plusToUpgradeMod);
+              
+        upgradeToPlusMod = RPGManager.CreateStatModifier(gamedataStatType.IsItemPlus, gameStatModifierType.Additive, 1.0);
         GameInstance.GetStatsSystem(this.GetGame()).RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.IsItemPlus, true);
-        upgradeToPlusMod = RPGManager.CreateStatModifierUsingCurve(gamedataStatType.IsItemPlus, gameStatModifierType.Additive, gamedataStatType.WasItemUpgraded, n"quality_curves", n"iconic_upgrades_amount_to_plus");
         GameInstance.GetStatsSystem(this.GetGame()).AddSavedModifier(itemData.GetStatsObjectID(), upgradeToPlusMod);
     };
 }
 
-// Only replaced to unlock isPlus for items. Still not sure if it was needed in the end
 @replaceMethod(PlayerPuppet)
 protected cb func OnItemAddedToInventory(evt: ref<ItemAddedEvent>) -> Bool {
     let drawItemRequest: ref<DrawItemRequest>;
@@ -108,7 +117,6 @@ protected cb func OnItemAddedToInventory(evt: ref<ItemAddedEvent>) -> Bool {
             // LogChannel(n"DEBUG", "We run SetUsualWeaponsLevelReq");
             this.SetIconicWeaponsLevelReq(itemData);
             this.SetUsualWeaponsLevelReq(itemData);
-            // this.LockItemPlusOnNonIconicWeapons(itemData);
         };
         if (Equals(itemCategory, gamedataItemCategory.Cyberware)) {
             if (itemData.HasStatData(gamedataStatType.Airdropped)) {
@@ -120,149 +128,166 @@ protected cb func OnItemAddedToInventory(evt: ref<ItemAddedEvent>) -> Bool {
                 StatusEffectHelper.ApplyStatusEffect(player, t"BaseStatusEffect.JustLootedIconicCWFromTreasureChest");
             };
         };
+
         itemQuality = RPGManager.GetItemDataQuality(itemData);
-        if !(itemData.HasTag(n"SkipActivityLog") || itemData.HasTag(n"SkipActivityLogOnLoot") || evt.flaggedAsSilent || itemData.HasTag(n"Currency") || ItemID.HasFlag(itemData.GetID(), gameEItemIDFlag.Preview) || (itemData.HasTag(n"QuickhackCraftingMaterials") || itemData.HasTag(n"SoftwareShard") || itemData.HasTag(n"Recipe")) && GameInstance.GetWorkspotSystem(this.GetGame()).IsActorInWorkspot(this)) {
-        itemName = UIItemsHelper.GetItemName(itemRecord, itemData);
-        GameInstance.GetActivityLogSystem(this.GetGame()).AddLog(GetLocalizedText("UI-ScriptExports-Looted") + ": " + itemName);
+        if (!(itemData.HasTag(n"SkipActivityLog") || itemData.HasTag(n"SkipActivityLogOnLoot") ||
+              evt.flaggedAsSilent || itemData.HasTag(n"Currency") || ItemID.HasFlag(itemData.GetID(), gameEItemIDFlag.Preview) ||
+              (itemData.HasTag(n"QuickhackCraftingMaterials") || itemData.HasTag(n"SoftwareShard") ||
+              itemData.HasTag(n"Recipe")) && GameInstance.GetWorkspotSystem(this.GetGame()).IsActorInWorkspot(this))) {
+                itemName = UIItemsHelper.GetItemName(itemRecord, itemData);
+                GameInstance.GetActivityLogSystem(this.GetGame()).AddLog(GetLocalizedText("UI-ScriptExports-Looted") + ": " + itemName);
         };
     };
+
     if IsDefined(this.m_itemLogBlackboard) {
         this.m_itemLogBlackboard.SetVariant(GetAllBlackboardDefs().UI_ItemLog.ItemLogItem, ToVariant(itemLogDataData), true);
     };
+
     eqSystem = GameInstance.GetScriptableSystemsContainer(this.GetGame()).Get(n"EquipmentSystem") as EquipmentSystem;
-    if IsDefined(eqSystem) {
-        if Equals(itemCategory, gamedataItemCategory.Weapon) && IsDefined(itemData) && itemData.HasTag(n"TakeAndEquip") {
-        drawItemRequest = new DrawItemRequest();
-        drawItemRequest.owner = this;
-        drawItemRequest.itemID = evt.itemID;
-        eqSystem.QueueRequest(drawItemRequest);
+    if (IsDefined(eqSystem)) {
+        if (Equals(itemCategory, gamedataItemCategory.Weapon) && IsDefined(itemData) && itemData.HasTag(n"TakeAndEquip")) {
+            drawItemRequest = new DrawItemRequest();
+            drawItemRequest.owner = this;
+            drawItemRequest.itemID = evt.itemID;
+            eqSystem.QueueRequest(drawItemRequest);
         };
     };
-    if IsDefined(wardrobeSystem) && Equals(itemCategory, gamedataItemCategory.Clothing) && !wardrobeSystem.IsItemBlacklisted(evt.itemID) {
+
+    if (IsDefined(wardrobeSystem) && Equals(itemCategory, gamedataItemCategory.Clothing) && !wardrobeSystem.IsItemBlacklisted(evt.itemID)) {
         wardrobeSystem.StoreUniqueItemIDAndMarkNew(this.GetGame(), evt.itemID);
     };
-    if Equals(itemType, gamedataItemType.Con_Skillbook) {
+
+    if (Equals(itemType, gamedataItemType.Con_Skillbook)) {
         GameInstance.GetTelemetrySystem(this.GetGame()).LogSkillbookUsed(this, evt.itemID);
         ItemActionsHelper.LearnItem(this, evt.itemID, true);
-        if itemData.HasTag(n"LargeSkillbook") {
-        notification_Message = GetLocalizedText("LocKey#46534") + "\\n";
-        if itemData.HasTag(n"Body") {
-            notification_Message += GetLocalizedText("LocKey#93274");
-        } else {
-            if itemData.HasTag(n"Reflex") {
-            notification_Message += GetLocalizedText("LocKey#93275");
+
+        if (itemData.HasTag(n"LargeSkillbook")) {
+            notification_Message = GetLocalizedText("LocKey#46534") + "\\n";
+            if (itemData.HasTag(n"Body")) {
+                notification_Message += GetLocalizedText("LocKey#93274");
             } else {
-            if itemData.HasTag(n"Intelligence") {
-                notification_Message += GetLocalizedText("LocKey#93278");
-            } else {
-                if itemData.HasTag(n"Cool") {
-                notification_Message += GetLocalizedText("LocKey#93280");
+                if (itemData.HasTag(n"Reflex")) {
+                    notification_Message += GetLocalizedText("LocKey#93275");
                 } else {
-                if itemData.HasTag(n"Tech") {
-                    notification_Message += GetLocalizedText("LocKey#51170");
-                } else {
-                    if itemData.HasTag(n"PerkSkillbook") {
-                    notification_Message += GetLocalizedText("LocKey#2694");
+                    if (itemData.HasTag(n"Intelligence")) {
+                        notification_Message += GetLocalizedText("LocKey#93278");
+                    } else {
+                        if (itemData.HasTag(n"Cool")) {
+                            notification_Message += GetLocalizedText("LocKey#93280");
+                        } else {
+                            if (itemData.HasTag(n"Tech")) {
+                                notification_Message += GetLocalizedText("LocKey#51170");
+                            } else {
+                                if (itemData.HasTag(n"PerkSkillbook")) {
+                                    notification_Message += GetLocalizedText("LocKey#2694");
+                                };
+                            };
+                        };
                     };
                 };
-                };
             };
-            };
-        };
         } else {
-        notification_Message = GetLocalizedText("LocKey#46534") + "\\n" + GetLocalizedText(LocKeyToString(TweakDBInterface.GetItemRecord(ItemID.GetTDBID(evt.itemID)).LocalizedDescription()));
+            notification_Message = GetLocalizedText("LocKey#46534") + "\\n" + GetLocalizedText(LocKeyToString(TweakDBInterface.GetItemRecord(ItemID.GetTDBID(evt.itemID)).LocalizedDescription()));
         };
+
         this.SetWarningMessage(notification_Message, SimpleMessageType.Neutral);
     } else {
-        if Equals(itemType, gamedataItemType.Con_Edible) {
-        if itemData.HasTag(n"PermanentFood") {
-            ItemActionsHelper.ConsumeItem(this, evt.itemID, true);
-            if itemData.HasTag(n"PermanentStaminaFood") {
-            Cast<Int32>(this.GetPermanentFoodBonus(gamedataStatType.StaminaRegenBonusBlackmarket));
-            notification_Message = GetLocalizedText("LocKey#93105") + "\\n" + GetLocalizedText("LocKey#93723");
-            } else {
-            if itemData.HasTag(n"PermanentMemoryFood") {
-                Cast<Int32>(this.GetPermanentFoodBonus(gamedataStatType.MemoryRegenBonusBlackmarket));
-                notification_Message = GetLocalizedText("LocKey#93106") + "\\n" + GetLocalizedText("LocKey#93724");
-            } else {
-                if itemData.HasTag(n"PermanentHealthFood") {
-                Cast<Int32>(this.GetPermanentFoodBonus(gamedataStatType.HealthBonusBlackmarket));
-                notification_Message = GetLocalizedText("LocKey#93104") + "\\n" + GetLocalizedText("LocKey#93725");
-                };
-            };
-            };
-            this.SetWarningMessage(notification_Message, SimpleMessageType.Neutral);
-        };
-        } else {
-        if Equals(itemType, gamedataItemType.Gen_Readable) {
-            transSystem.RemoveItem(this, evt.itemID, 1);
-            entryString = ReadAction.GetJournalEntryFromAction(ItemActionsHelper.GetReadAction(evt.itemID).GetID());
-            GameInstance.GetJournalManager(this.GetGame()).ChangeEntryState(entryString, "gameJournalOnscreen", gameJournalEntryState.Active, JournalNotifyOption.Notify);
-        } else {
-            if Equals(itemType, gamedataItemType.Gen_Junk) && GameInstance.GetStatsSystem(this.GetGame()).GetStatValue(Cast<StatsObjectID>(this.GetEntityID()), gamedataStatType.CanAutomaticallyDisassembleJunk) > 0.00 {
-            ItemActionsHelper.DisassembleItem(this, evt.itemID, transSystem.GetItemQuantity(this, evt.itemID));
-            } else {
-            if Equals(itemType, gamedataItemType.Gad_Grenade) || Equals(itemType, gamedataItemType.Con_Inhaler) || Equals(itemType, gamedataItemType.Con_Injector) {
-                tags = TweakDBInterface.GetItemRecord(ItemID.GetTDBID(itemLogDataData)).Tags();
-                ConsumablesChargesHelper.LeaveTheBestQualityConsumable(this.GetGame(), ConsumablesChargesHelper.GetConsumableTag(tags));
-                ConsumablesChargesHelper.HideConsumableRecipe(this.GetGame(), ItemID.GetTDBID(evt.itemID));
-            } else {
-                if Equals(itemType, gamedataItemType.Con_Ammo) {
-                GameInstance.GetBlackboardSystem(this.GetGame()).Get(GetAllBlackboardDefs().UI_EquipmentData).SetBool(GetAllBlackboardDefs().UI_EquipmentData.ammoLooted, true);
-                GameInstance.GetBlackboardSystem(this.GetGame()).Get(GetAllBlackboardDefs().UI_EquipmentData).SignalBool(GetAllBlackboardDefs().UI_EquipmentData.ammoLooted);
+        if (Equals(itemType, gamedataItemType.Con_Edible)) {
+            if (itemData.HasTag(n"PermanentFood")) {
+                ItemActionsHelper.ConsumeItem(this, evt.itemID, true);
+                if (itemData.HasTag(n"PermanentStaminaFood")) {
+                    Cast<Int32>(this.GetPermanentFoodBonus(gamedataStatType.StaminaRegenBonusBlackmarket));
+                    notification_Message = GetLocalizedText("LocKey#93105") + "\\n" + GetLocalizedText("LocKey#93723");
                 } else {
-                if Equals(itemType, gamedataItemType.Gen_Keycard) {
-                    this.GotKeycardNotification();
-                } else {
-                    if Equals(itemType, gamedataItemType.Gen_MoneyShard) {
-                    price = RPGManager.CalculateSellPrice(this.GetGame(), this, evt.itemID) * evt.itemData.GetQuantity();
-                    transSystem.GiveMoney(this, price, n"money");
-                    transSystem.RemoveItem(this, evt.itemID, transSystem.GetItemQuantity(this, evt.itemID));
+                    if (itemData.HasTag(n"PermanentMemoryFood")) {
+                        Cast<Int32>(this.GetPermanentFoodBonus(gamedataStatType.MemoryRegenBonusBlackmarket));
+                        notification_Message = GetLocalizedText("LocKey#93106") + "\\n" + GetLocalizedText("LocKey#93724");
+                    } else {
+                        if (itemData.HasTag(n"PermanentHealthFood")) {
+                            Cast<Int32>(this.GetPermanentFoodBonus(gamedataStatType.HealthBonusBlackmarket));
+                            notification_Message = GetLocalizedText("LocKey#93104") + "\\n" + GetLocalizedText("LocKey#93725");
+                        };
                     };
                 };
+                this.SetWarningMessage(notification_Message, SimpleMessageType.Neutral);
+            };
+        } else {
+            if (Equals(itemType, gamedataItemType.Gen_Readable)) {
+                transSystem.RemoveItem(this, evt.itemID, 1);
+                entryString = ReadAction.GetJournalEntryFromAction(ItemActionsHelper.GetReadAction(evt.itemID).GetID());
+                GameInstance.GetJournalManager(this.GetGame()).ChangeEntryState(entryString, "gameJournalOnscreen", gameJournalEntryState.Active, JournalNotifyOption.Notify);
+            } else {
+                if (Equals(itemType, gamedataItemType.Gen_Junk) &&
+                    GameInstance.GetStatsSystem(this.GetGame()).GetStatValue(Cast<StatsObjectID>(this.GetEntityID()), gamedataStatType.CanAutomaticallyDisassembleJunk) > 0.00) {
+                    ItemActionsHelper.DisassembleItem(this, evt.itemID, transSystem.GetItemQuantity(this, evt.itemID));
+                } else {
+                    if (Equals(itemType, gamedataItemType.Gad_Grenade) || Equals(itemType, gamedataItemType.Con_Inhaler) || Equals(itemType, gamedataItemType.Con_Injector)) {
+                        tags = TweakDBInterface.GetItemRecord(ItemID.GetTDBID(itemLogDataData)).Tags();
+                        ConsumablesChargesHelper.LeaveTheBestQualityConsumable(this.GetGame(), ConsumablesChargesHelper.GetConsumableTag(tags));
+                        ConsumablesChargesHelper.HideConsumableRecipe(this.GetGame(), ItemID.GetTDBID(evt.itemID));
+                    } else {
+                        if (Equals(itemType, gamedataItemType.Con_Ammo)) {
+                            GameInstance.GetBlackboardSystem(this.GetGame()).Get(GetAllBlackboardDefs().UI_EquipmentData).SetBool(GetAllBlackboardDefs().UI_EquipmentData.ammoLooted, true);
+                            GameInstance.GetBlackboardSystem(this.GetGame()).Get(GetAllBlackboardDefs().UI_EquipmentData).SignalBool(GetAllBlackboardDefs().UI_EquipmentData.ammoLooted);
+                        } else {
+                            if (Equals(itemType, gamedataItemType.Gen_Keycard)) {
+                                this.GotKeycardNotification();
+                            } else {
+                                if (Equals(itemType, gamedataItemType.Gen_MoneyShard)) {
+                                    price = RPGManager.CalculateSellPrice(this.GetGame(), this, evt.itemID) * evt.itemData.GetQuantity();
+                                    transSystem.GiveMoney(this, price, n"money");
+                                    transSystem.RemoveItem(this, evt.itemID, transSystem.GetItemQuantity(this, evt.itemID));
+                                };
+                            };
+                        };
+                    };
                 };
             };
-            };
-        };
         };
     };
-    if RPGManager.IsItemBroken(evt.itemData) && RPGManager.IsItemWeapon(evt.itemID) {
+
+    if (RPGManager.IsItemBroken(evt.itemData) && RPGManager.IsItemWeapon(evt.itemID)) {
         ItemActionsHelper.DisassembleItem(this, evt.itemID, transSystem.GetItemQuantity(this, evt.itemID));
     };
-    if questSystem.GetFact(n"disable_tutorials") == 0 && questSystem.GetFact(n"q001_show_sts_tut") > 0 && !RPGManager.IsItemBroken(evt.itemData) {
+
+    if (questSystem.GetFact(n"disable_tutorials") == 0 && questSystem.GetFact(n"q001_show_sts_tut") > 0 && !RPGManager.IsItemBroken(evt.itemData)) {
         weaponEvolution = RPGManager.GetWeaponEvolution(evt.itemID);
-        if Equals(weaponEvolution, gamedataWeaponEvolution.Smart) && questSystem.GetFact(n"smart_weapon_tutorial") == 0 {
-        questSystem.SetFact(n"smart_weapon_tutorial", 1);
+        if (Equals(weaponEvolution, gamedataWeaponEvolution.Smart) && questSystem.GetFact(n"smart_weapon_tutorial") == 0) {
+            questSystem.SetFact(n"smart_weapon_tutorial", 1);
         } else {
-        if Equals(weaponEvolution, gamedataWeaponEvolution.Tech) && RPGManager.IsTechPierceEnabled(this.GetGame(), this, evt.itemID) && questSystem.GetFact(n"tech_weapon_tutorial") == 0 {
-            questSystem.SetFact(n"tech_weapon_tutorial", 1);
-        } else {
-            if Equals(weaponEvolution, gamedataWeaponEvolution.Power) && RPGManager.IsRicochetChanceEnabled(this.GetGame(), this, evt.itemID) && questSystem.GetFact(n"power_weapon_tutorial") == 0 && evt.itemID != ItemID.CreateQuery(t"Items.Preset_V_Unity_Cutscene") && evt.itemID != ItemID.CreateQuery(t"Items.Preset_V_Unity") {
-            questSystem.SetFact(n"power_weapon_tutorial", 1);
+            if (Equals(weaponEvolution, gamedataWeaponEvolution.Tech) && RPGManager.IsTechPierceEnabled(this.GetGame(), this, evt.itemID) && questSystem.GetFact(n"tech_weapon_tutorial") == 0) {
+                questSystem.SetFact(n"tech_weapon_tutorial", 1);
+            } else {
+                if (Equals(weaponEvolution, gamedataWeaponEvolution.Power) && RPGManager.IsRicochetChanceEnabled(this.GetGame(), this, evt.itemID) &&
+                questSystem.GetFact(n"power_weapon_tutorial") == 0 && evt.itemID != ItemID.CreateQuery(t"Items.Preset_V_Unity_Cutscene") &&
+                evt.itemID != ItemID.CreateQuery(t"Items.Preset_V_Unity")) {
+                    questSystem.SetFact(n"power_weapon_tutorial", 1);
+                };
             };
         };
-        };
-        if Equals(itemCategory, gamedataItemCategory.Gadget) && questSystem.GetFact(n"grenade_inventory_tutorial") == 0 {
-        questSystem.SetFact(n"grenade_inventory_tutorial", 1);
+        if (Equals(itemCategory, gamedataItemCategory.Gadget) && questSystem.GetFact(n"grenade_inventory_tutorial") == 0) {
+            questSystem.SetFact(n"grenade_inventory_tutorial", 1);
         } else {
-        if Equals(itemCategory, gamedataItemCategory.Cyberware) && questSystem.GetFact(n"cyberware_inventory_tutorial") == 0 {
-            questSystem.SetFact(n"cyberware_inventory_tutorial", 1);
+            if (Equals(itemCategory, gamedataItemCategory.Cyberware) && questSystem.GetFact(n"cyberware_inventory_tutorial") == 0) {
+                questSystem.SetFact(n"cyberware_inventory_tutorial", 1);
+            };
         };
+        if ((Equals(itemType, gamedataItemType.Con_Inhaler) || Equals(itemType, gamedataItemType.Con_Injector)) && questSystem.GetFact(n"consumable_inventory_tutorial") == 0) {
+            questSystem.SetFact(n"consumable_inventory_tutorial", 1);
         };
-        if (Equals(itemType, gamedataItemType.Con_Inhaler) || Equals(itemType, gamedataItemType.Con_Injector)) && questSystem.GetFact(n"consumable_inventory_tutorial") == 0 {
-        questSystem.SetFact(n"consumable_inventory_tutorial", 1);
-        };
-        if RPGManager.IsItemIconic(evt.itemData) && Equals(itemCategory, gamedataItemCategory.Weapon) && questSystem.GetFact(n"iconic_item_tutorial") == 0 {
-        questSystem.SetFact(n"iconic_item_tutorial", 1);
-        };
-    };
-    if questSystem.GetFact(n"initial_gadget_picked") == 0 {
-        if Equals(RPGManager.GetItemCategory(evt.itemID), gamedataItemCategory.Gadget) {
-        questSystem.SetFact(n"initial_gadget_picked", 1);
+        if (RPGManager.IsItemIconic(evt.itemData) && Equals(itemCategory, gamedataItemCategory.Weapon) && questSystem.GetFact(n"iconic_item_tutorial") == 0) {
+            questSystem.SetFact(n"iconic_item_tutorial", 1);
         };
     };
+
+    if (questSystem.GetFact(n"initial_gadget_picked") == 0) {
+        if (Equals(RPGManager.GetItemCategory(evt.itemID), gamedataItemCategory.Gadget)) {
+            questSystem.SetFact(n"initial_gadget_picked", 1);
+        };
+    };
+
     RPGManager.ProcessOnLootedPackages(this, evt.itemID);
-    if Equals(itemQuality, gamedataQuality.Legendary) || Equals(itemQuality, gamedataQuality.Iconic) {
+    if (Equals(itemQuality, gamedataQuality.Legendary) || Equals(itemQuality, gamedataQuality.Iconic)) {
         GameInstance.GetAutoSaveSystem(this.GetGame()).RequestCheckpoint();
     };
 }
@@ -299,17 +324,18 @@ public final static func GetItemTierForUpgrades(itemData: wref<gameItemData>) ->
 // It might be not needed as it could ultimately be trimmed out
 @addMethod(CraftingSystem)
 private func DetermineItemQualityAndTierCorretly(itemData: wref<gameItemData>) -> array<Float> {
-    let itemQualityValue: Float = itemData.GetStatValueByType(gamedataStatType.Quality);
+    let itemQuality: gamedataQuality = RPGManager.GetItemQuality(itemData);
+    let itemQualityValue: Float = RPGManager.ItemQualityEnumToValue(itemQuality);
+    let itemTierQualityValue: Float = itemQualityValue * 2.0;
     let isPlus: Float = RPGManager.GetItemPlus(itemData);
     let result: array<Float>;
-
+    
     ArrayPush(result, itemQualityValue);
     ArrayPush(result, isPlus);
     if (Cast<Bool>(isPlus)) {
-        // LogChannel(n"DEBUG", s"DetermineItemQualityCorretly bump itemQuality");
-        ArrayPush(result, itemQualityValue + 1.00);
+        ArrayPush(result, itemTierQualityValue + 1.0);
     } else {
-        ArrayPush(result, itemQualityValue);
+        ArrayPush(result, itemTierQualityValue);
     }
 
     return result;
@@ -373,13 +399,14 @@ private final func UpgradeItem(owner: wref<GameObject>, itemID: ItemID) -> Void 
     let upgradeToQualityMod: ref<gameStatModifierData>;
     
     let oldVal: Float = itemData.GetStatValueByType(gamedataStatType.WasItemUpgraded);
-    // LogChannel(n"DEBUG", s"UpgradeItem before any changes oldVal: \(oldVal)");
     let newVal: Float; // = oldVal + 1.00;
     let itemQuality: Float;
 
+    LogChannel(n"DEBUG", s"UpgradeItem WasItemUpgraded: \(oldVal)");
+
     let actualUpgradeNumbers: array<Float> = this.DetermineItemQualityAndTierCorretly(itemData);
     let isPlus: Bool = Cast<Bool>(actualUpgradeNumbers[1]);
-    let wasItemUpgraded: Float = itemData.GetStatValueByType(gamedataStatType.WasItemUpgraded);
+    let wasItemUpgraded: Float = oldVal;
     let itemTierQuality: gamedataQuality = RPGManager.GetItemTierForUpgrades(wasItemUpgraded);
     let itemQualityName: gamedataQuality = RPGManager.GetItemQuality(actualUpgradeNumbers[0]);
 
@@ -608,30 +635,57 @@ private final func CraftItem(target: wref<GameObject>, itemRecord: ref<Item_Reco
     return itemData;
 }
 
-// Use this for debug data
 // @replaceMethod(UpgradingScreenController)
-// private final func UpdateTooltipData() -> Void {
-//     let delayedCall: ref<DelayedTooltipCall> = this.CreateDelayedCall();
-//     let itemData: ref<gameItemData> = InventoryItemData.GetGameItemData(this.m_selectedItemData);
-//     let itemQuality: gamedataQuality = RPGManager.GetItemQuality(itemData);
-//     let itemTierQuality: gamedataQuality = RPGManager.GetItemTierForUpgrades(itemData);
-//     let wasItemUpg = itemData.GetStatValueByType(gamedataStatType.WasItemUpgraded);
-//     let isPlus: Float = RPGManager.GetItemPlus(itemData);
-//     // LogChannel(n"DEBUG", s"UpdateTooltipData itemTierQuality: \(itemTierQuality)");
-//     // LogChannel(n"DEBUG", s"UpdateTooltipData wasItemUpg: \(wasItemUpg)");
-//     // LogChannel(n"DEBUG", s"UpdateTooltipData isPlus: \(isPlus)");
+// private final func UpgradeItem(const selectedItemData: script_ref<InventoryItemData>) -> Void {
+//     LogChannel(n"DEBUG", s"UpgradingScreenController UpgradeItem");
 
-//     let isQualityShown: Bool = this.IsQualityShown(itemQuality);
-//     let check: Bool = this.m_isCraftable || isQualityShown;
-//     // LogChannel(n"DEBUG", s"UpdateTooltipData check: \(check)");
-//     // LogChannel(n"DEBUG", s"UpdateTooltipData ------------------------------------------------");
-//     if (check) {
-//       this.UpdateTooltipLeft();
-//       this.m_DelaySystem.DelayCallback(delayedCall, this.DELAYED_TOOLTIP_RIGHT, false);
-//       return;
+//     let itemQuality: gamedataQuality = RPGManager.GetItemTierForUpgrades(InventoryItemData.GetGameItemData(this.m_selectedItemData));
+//     let isEmpty: Bool = this.IsEmptyData();
+//     let isLastUpgrade: Bool = this.IsLastUpgrade(itemQuality);
+//     let upgradeItemRequest: ref<UpgradeItemRequest> = new UpgradeItemRequest();
+
+//     LogChannel(n"DEBUG", s"UpgradingScreenController itemQuality: \(itemQuality)");
+//     LogChannel(n"DEBUG", s"UpgradingScreenController isLastUpgrade: \(isLastUpgrade)");
+    
+//     upgradeItemRequest.owner = this.m_craftingGameController.GetPlayer();
+//     upgradeItemRequest.itemID = Deref(selectedItemData).ID;
+    
+//     this.m_craftingSystem.QueueRequest(upgradeItemRequest);
+
+//     if (isLastUpgrade && !isEmpty) {
+//         this.DispatchSelectDelayed(0u);
 //     };
-//     this.HideTooltips();
 // }
+
+// Use this for debug data
+@replaceMethod(UpgradingScreenController)
+private final func UpdateTooltipData() -> Void {
+    let delayedCall: ref<DelayedTooltipCall> = this.CreateDelayedCall();
+    let itemData: ref<gameItemData> = InventoryItemData.GetGameItemData(this.m_selectedItemData);
+
+    let itemQualityName: gamedataQuality = RPGManager.GetItemQuality(itemData);
+    let itemQualityValue: Float = RPGManager.ItemQualityEnumToValue(itemQualityName);
+    let itemTierQualityValue: Float = itemQualityValue * 2.0;
+    let isPlus: Float = RPGManager.GetItemPlus(itemData);
+    let wasItemUpgraded = itemData.GetStatValueByType(gamedataStatType.WasItemUpgraded);
+
+    LogChannel(n"DEBUG", s"UpdateTooltipData itemQualityName: \(itemQualityName)");
+    LogChannel(n"DEBUG", s"UpdateTooltipData wasItemUpgraded: \(wasItemUpgraded)");
+    LogChannel(n"DEBUG", s"UpdateTooltipData itemTierQualityValue: \(itemTierQualityValue)");
+    LogChannel(n"DEBUG", s"UpdateTooltipData isPlus: \(isPlus)");
+    LogChannel(n"DEBUG", s"-----------------------------------");
+
+    let isQualityShown: Bool = this.IsQualityShown(itemQualityName);
+    let check: Bool = this.m_isCraftable || isQualityShown;
+    // LogChannel(n"DEBUG", s"UpdateTooltipData check: \(check)");
+    // LogChannel(n"DEBUG", s"UpdateTooltipData ------------------------------------------------");
+    if (check) {
+      this.UpdateTooltipLeft();
+      this.m_DelaySystem.DelayCallback(delayedCall, this.DELAYED_TOOLTIP_RIGHT, false);
+      return;
+    };
+    this.HideTooltips();
+}
 
 // This has to be replaced because otherwise we would have to replace another method and it is
 // just easier to fix this by invoking new methods
@@ -653,40 +707,32 @@ public final func UpdateTooltipRightAndShow() -> Void {
 @addMethod(UpgradingScreenController)
 private func UpgradeItemForPreview() -> Void {
     let itemData: ref<gameItemData> = InventoryItemData.GetGameItemData(this.m_selectedItemData);
-    let itemQuality: gamedataQuality = RPGManager.GetItemQuality(itemData);
+    let itemQualityName: gamedataQuality = RPGManager.GetItemQuality(itemData);
+    let itemQualityValue: Float = RPGManager.ItemQualityEnumToValue(itemQualityName);
+    let itemTierQualityValue: Float = itemQualityValue * 2.0;
     let isPlus: Bool = Cast<Bool>(RPGManager.GetItemPlus(itemData));
     let wasItemUpgraded: Float = itemData.GetStatValueByType(gamedataStatType.WasItemUpgraded);
-    let itemTierQuality: gamedataQuality = RPGManager.GetItemTierForUpgrades(wasItemUpgraded);
-    let itemQualityName: gamedataQuality = RPGManager.GetItemQuality(itemData);
     let statsSystem = this.m_StatsSystem;
 
-    // LogChannel(n"DEBUG", s"UpgradeItemForPreview itemQuality: \(itemQuality)");
-    // LogChannel(n"DEBUG", s"UpgradeItemForPreview itemTierQuality: \(itemTierQuality)");
-    // LogChannel(n"DEBUG", s"UpgradeItemForPreview wasItemUpg: \(wasItemUpg)");
-    // LogChannel(n"DEBUG", s"UpgradeItemForPreview isPlus: \(isPlus)");
+    LogChannel(n"DEBUG", s"UpgradeItemForPreview itemQualityName: \(itemQualityName)");
+    LogChannel(n"DEBUG", s"UpgradeItemForPreview wasItemUpgraded: \(wasItemUpgraded)");
+    LogChannel(n"DEBUG", s"UpgradeItemForPreview itemTierQualityValue: \(itemTierQualityValue)");
+    LogChannel(n"DEBUG", s"UpgradeItemForPreview isPlus: \(isPlus)");
 
-    let itemQualityValue: Float = RPGManager.ItemQualityEnumToValue(itemQuality);
-    let newVal: Float;
+    if (wasItemUpgraded > itemTierQualityValue) {
+        wasItemUpgraded = itemTierQualityValue;
+    }
+
+    let newVal: Float = wasItemUpgraded + 1.00;
 
     let mod: ref<gameStatModifierData>;
     let plusToUpgradeMod: ref<gameStatModifierData>;
     let upgradeToPlusMod: ref<gameStatModifierData>;
     let upgradeToQualityMod: ref<gameStatModifierData>;
 
-    // Remove current WasItemUpgraded as it is not used in logic and is only storing value for UI
     statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.WasItemUpgraded, true);
     if (isPlus && (Equals(itemQualityName, gamedataQuality.Legendary))) {
-        // LogChannel(n"DEBUG", s"UpgradeItemForPreview if Plus Plus do nothng");
-        // TODO: Remove with fix
-        if (Equals(itemTierQuality, gamedataQuality.LegendaryPlus)) {
-            return;
-        }
-
-        if (Equals(itemTierQuality, gamedataQuality.LegendaryPlusPlus)) {
-            return;
-        }
-
-        newVal = wasItemUpgraded + 1.00;
+        LogChannel(n"DEBUG", s"UpgradeItemForPreview if Plus Plus do nothing");
 
         mod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, newVal);
         upgradeToPlusMod = RPGManager.CreateStatModifier(gamedataStatType.IsItemPlus, gameStatModifierType.Additive, 1.0);
@@ -698,8 +744,7 @@ private func UpgradeItemForPreview() -> Void {
         statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.Quality, true);
         statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToQualityMod);
     } else if (!isPlus) {
-        // LogChannel(n"DEBUG", s"UpgradeItemForPreview we upgrade item to Plus");
-        newVal = itemQualityValue + 1.00;
+        LogChannel(n"DEBUG", s"UpgradeItemForPreview we upgrade item to Plus");
 
         mod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, newVal);
         upgradeToPlusMod = RPGManager.CreateStatModifier(gamedataStatType.IsItemPlus, gameStatModifierType.Additive, 1.0);
@@ -711,17 +756,17 @@ private func UpgradeItemForPreview() -> Void {
         statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.Quality, true);
         statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToQualityMod);
     } else {
-        // LogChannel(n"DEBUG", s"UpgradeItemForPreview we upgrade item to next tier");
-        newVal = itemQualityValue + 1.00;
+        LogChannel(n"DEBUG", s"UpgradeItemForPreview we upgrade item to next tier");
 
-        plusToUpgradeMod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, newVal + 1.0);
-        upgradeToQualityMod = RPGManager.CreateStatModifier(gamedataStatType.Quality, gameStatModifierType.Additive, newVal);
+        plusToUpgradeMod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, newVal);
+        upgradeToQualityMod = RPGManager.CreateStatModifier(gamedataStatType.Quality, gameStatModifierType.Additive, itemQualityValue + 1.0);
 
         statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.IsItemPlus, true);
         statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), plusToUpgradeMod);
         statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.Quality, true);
         statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToQualityMod);
     }
+    LogChannel(n"DEBUG", s"-----------------------------------");
 }
 
 // Degrades item to level it was before upgrade
@@ -729,36 +774,36 @@ private func UpgradeItemForPreview() -> Void {
 @addMethod(UpgradingScreenController)
 private func DegradeItemForPreview() -> Void {
     let itemData: ref<gameItemData> = InventoryItemData.GetGameItemData(this.m_selectedItemData);
-    let itemQuality: gamedataQuality = RPGManager.GetItemQuality(itemData);
+    let itemQualityName: gamedataQuality = RPGManager.GetItemQuality(itemData);
+    let itemQualityValue: Float = RPGManager.ItemQualityEnumToValue(itemQualityName);
+    let itemTierQualityValue: Float = itemQualityValue * 2.0;
     let isPlus: Bool = Cast<Bool>(RPGManager.GetItemPlus(itemData));
     let wasItemUpgraded: Float = itemData.GetStatValueByType(gamedataStatType.WasItemUpgraded);
-    let itemTierQuality: gamedataQuality = RPGManager.GetItemTierForUpgrades(wasItemUpgraded);
-    let itemQualityName: gamedataQuality = RPGManager.GetItemQuality(itemData);
     let statsSystem = this.m_StatsSystem;
 
-    // LogChannel(n"DEBUG", s"UpgradeItemForPreview itemQuality: \(itemQuality)");
-    // LogChannel(n"DEBUG", s"UpgradeItemForPreview itemTierQuality: \(itemTierQuality)");
-    // LogChannel(n"DEBUG", s"UpgradeItemForPreview wasItemUpg: \(wasItemUpg)");
-    // LogChannel(n"DEBUG", s"UpgradeItemForPreview isPlus: \(isPlus)");
+    LogChannel(n"DEBUG", s"DegradeItemForPreview itemQuality: \(itemQualityName)");
+    LogChannel(n"DEBUG", s"DegradeItemForPreview itemTierQualityValue: \(itemTierQualityValue)");
+    LogChannel(n"DEBUG", s"DegradeItemForPreview wasItemUpgraded: \(wasItemUpgraded)");
+    LogChannel(n"DEBUG", s"DegradeItemForPreview isPlus: \(isPlus)");
 
-    let itemQualityValue: Float = RPGManager.ItemQualityEnumToValue(itemQuality);
-    let newVal: Float;
+    if (wasItemUpgraded < itemTierQualityValue) {
+        wasItemUpgraded = itemTierQualityValue;
+    }
+
+    let newVal: Float = wasItemUpgraded - 1.00;
 
     let mod: ref<gameStatModifierData>;
     let plusToUpgradeMod: ref<gameStatModifierData>;
     let upgradeToPlusMod: ref<gameStatModifierData>;
     let upgradeToQualityMod: ref<gameStatModifierData>;
 
-    // Remove current WasItemUpgraded as it is not used in logic and is only storing value for UI
     statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.WasItemUpgraded, true);
     if (isPlus && (Equals(itemQualityName, gamedataQuality.Legendary))) {
-        // LogChannel(n"DEBUG", s"DegradeItemForPreview if item is Plus Plus do nothing");
-        if (Equals(itemTierQuality, gamedataQuality.LegendaryPlusPlus)) {
-            // LogChannel(n"DEBUG", s"UpgradeItem lock upgrade after + for now");
-            return;
-        }
-
-        newVal = wasItemUpgraded - 1.00;
+        LogChannel(n"DEBUG", s"DegradeItemForPreview if item is Plus Plus do nothing");
+        // if (Equals(wasItemUpgraded, gamedataQuality.LegendaryPlusPlus)) {
+        //     // LogChannel(n"DEBUG", s"UpgradeItem lock upgrade after + for now");
+        //     return;
+        // } 
 
         mod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, newVal);
         upgradeToPlusMod = RPGManager.CreateStatModifier(gamedataStatType.IsItemPlus, gameStatModifierType.Additive, 1.0);
@@ -770,9 +815,7 @@ private func DegradeItemForPreview() -> Void {
         statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.Quality, true);
         statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToQualityMod);
     } else if (isPlus) {
-        // LogChannel(n"DEBUG", s"DegradeItemForPreview we degrade item from Plus");
-        // But itemQualityTier has to go down as it will be stored in WasItemUpgraded
-        newVal = itemQualityValue - 1.00;
+        LogChannel(n"DEBUG", s"DegradeItemForPreview we degrade item from Plus");
 
         plusToUpgradeMod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, newVal);
         upgradeToQualityMod = RPGManager.CreateStatModifier(gamedataStatType.Quality, gameStatModifierType.Additive, itemQualityValue);
@@ -782,12 +825,11 @@ private func DegradeItemForPreview() -> Void {
         statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.Quality, true);
         statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToQualityMod);
     } else {
-        // LogChannel(n"DEBUG", s"DegradeItemForPreview we degrade item in quality");
-        newVal = itemQualityValue - 1.00;
+        LogChannel(n"DEBUG", s"DegradeItemForPreview we degrade item in quality");
 
-        mod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, newVal - 1.0);
+        mod = RPGManager.CreateStatModifier(gamedataStatType.WasItemUpgraded, gameStatModifierType.Additive, newVal);
         upgradeToPlusMod = RPGManager.CreateStatModifier(gamedataStatType.IsItemPlus, gameStatModifierType.Additive, 1.0);
-        upgradeToQualityMod = RPGManager.CreateStatModifier(gamedataStatType.Quality, gameStatModifierType.Additive, newVal);
+        upgradeToQualityMod = RPGManager.CreateStatModifier(gamedataStatType.Quality, gameStatModifierType.Additive, itemQualityValue - 1.0);
 
         statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), mod);
         statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.IsItemPlus, true);
@@ -795,4 +837,5 @@ private func DegradeItemForPreview() -> Void {
         statsSystem.RemoveAllModifiers(itemData.GetStatsObjectID(), gamedataStatType.Quality, true);
         statsSystem.AddSavedModifier(itemData.GetStatsObjectID(), upgradeToQualityMod);
     }
+    LogChannel(n"DEBUG", s"-----------------------------------");
 }
