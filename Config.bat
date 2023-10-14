@@ -1,3 +1,5 @@
+:: Is Debug run
+set isDebug=true
 :: Do we release as is or do we do a clean up files
 set cleanNonModFiles=true
 :: Do we release as is or do we do a clean up content of files

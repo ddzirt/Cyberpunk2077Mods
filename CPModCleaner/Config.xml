@@ -1,0 +1,10 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<configuration isDebug="false">
+  <removeSettings>
+    <setting name="Comment" value="//" />
+    <setting name="LogDebug" value="Log" />
+  </removeSettings>
+  <supportedModTypes>
+    <mod name="Redscript" fileType=".reds" />
+  </supportedModTypes>
+</configuration>

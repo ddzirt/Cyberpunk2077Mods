@@ -1,16 +1,17 @@
-// UpgradeWeaponsUnlocked
-// by ddz1rt AKA udonSoup
-// Version 1.0 for game version 2.0+ with/without PL
-// Kudos to packtojack for support and psiberx for `red-hot-reload`
-// Props to PotatoOfDoom for pulter :D
-
 /*
+ UpgradeWeaponsUnlocked
+ by ddz1rt AKA udonSoup
+ Version 1.0 for game version 2.0+ with/without PL
+ Kudos to packtojack for support and psiberx for `red-hot-reload`
+ Props to PotatoOfDoom for pulter :D
+
   _____ _   _  ____ _  __  ____  _   _ _____ ___ _   _ 
  |  ___| | | |/ ___| |/ / |  _ \| | | |_   _|_ _| \ | |
  | |_  | | | | |   | ' /  | |_) | | | | | |  | ||  \| |
  |  _| | |_| | |___| . \  |  __/| |_| | | |  | || |\  |
  |_|    \___/ \____|_|\_\ |_|    \___/  |_| |___|_| \_|
-                                                        
+
+
 */
 
 module udonSoup.UpgradeWeaponsUnlocked
@@ -37,7 +38,6 @@ module udonSoup.UpgradeWeaponsUnlocked
     let itemTierQuality: gamedataQuality = RPGManager.GetItemTierForUpgrades(itemData); // Which shows me Common, CommonPlus
     // Uses direct conversion from Float to Enum
     let itemTierQualityForUpgrade: gamedataQuality = RPGManager.GetItemTierForUpgrades(itemQualityNumber); // Common, CommonPlus
-
 */
 
 // In 2.0 nonIconic weapons are not upgradeable
