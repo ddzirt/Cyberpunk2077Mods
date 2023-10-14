@@ -1,5 +1,6 @@
 Debug200/
 Testing/
+/Output.txt
 
 # User-specific files
 *.suo
