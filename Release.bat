@@ -1,6 +1,6 @@
 call Config.bat
 
-timeout /t 2 /nobreak
+timeout /t 1 /nobreak
 
 @echo off
 if "%1" == "specific" (
@@ -60,22 +60,24 @@ if "%1" == "specific" (
       )
     )
     :: Run actual exe
-    @REM IF EXIST %pathFrom%\CPModCleaner.exe (
-    @REM   echo Clean up actual mod files
-    @REM   start /B /wait "CPModCleaner" %pathFrom%\CPModCleaner.exe
-    @REM )
+    IF EXIST %pathFrom%\CPModCleaner.exe (
+      echo Clean up actual mod files
+      start /B /wait "CPModCleaner" %pathFrom%\CPModCleaner.exe
+    )
   )
   :: Add a copy of mod
   echo Copy mod:
   Robocopy "%pathFrom%\%2" "%pathTo%\%2" /E > nul
   echo Mod copied!
+  :: Delete not needed(would need further modification)
+  del /s /q /f %pathFrom%\%2Cleaned.reds
+  del /s /q /f %pathTo%\%2.reds
   :: Clean it up
   if "%cleanNonModFiles%" == "true" (
       echo Clean it up if set in config
       del /s /q /f %pathTo%\*.md
       rmdir /s /q %pathTo%\%2\Media
-  )
-  @REM del 
+  ) 
   :: TODO: Add more custom/better clean up logic for this
   :: Zip for release
   echo Run zip: 

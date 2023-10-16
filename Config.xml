@@ -7,4 +7,10 @@
   <supportedModTypes>
     <mod name="Redscript" fileType=".reds" />
   </supportedModTypes>
+  <ignoreSettings>
+    <ignore name="Debug200" />
+    <ignore name="Testing" />
+    <ignore name="ImmersiveBalance" />
+    <ignore name="bin" />
+  </ignoreSettings>
 </configuration>

@@ -13,7 +13,7 @@ using (StreamWriter SWriter = new StreamWriter(debugFile))
             File.Copy(configFile, Path.Combine(Environment.CurrentDirectory, configFileName), true);
         }
 
-        SWriter.WriteLine(string.Format("App configuration: {0}", ConfigManager.isDebug));
+        SWriter.WriteLine(string.Format("App configuration isDebug: {0}", ConfigManager.isDebug));
 
         var modTypes = ConfigManager.SupportedModOptions.Select(pair => pair.Value).ToList();
         var filterTypes = ConfigManager.FilterOptions.Select(pair => pair.Value).ToList();
@@ -27,27 +27,58 @@ using (StreamWriter SWriter = new StreamWriter(debugFile))
             files.AddRange(filesToCleanUp);
         }
 
+        List<string> filesAfterIgnoreModOptions = new List<string>();
+        if (!ConfigManager.isDebug)
+        {
+            filesAfterIgnoreModOptions = files.Where(f => !ConfigManager.IgnoreModOptions.Any(fo => f.Contains(fo))).ToList();
+        }
+        else
+        {
+            ConfigManager.IgnoreModOptions = ConfigManager.IgnoreModOptions.Where(imo => imo != "bin").ToList();
+            filesAfterIgnoreModOptions = files.Where(f => !ConfigManager.IgnoreModOptions.Any(fo => f.Contains(fo)) && !f.Contains("Test")).ToList();
+        }
+
         SWriter.WriteLine("App files retrieved");
 
-        foreach (var file in files)
+        // We can't have previous "Cleaned" copies in our logic
+        var filesToDelete = files.Where(f => (f.Contains("Cleaned") || f.Contains("Test"))).ToList();
+        if (filesToDelete.Count > 0)
         {
-            string tempFile;
+            foreach (var file in filesToDelete)
+            {
+                try
+                {
+                    SWriter.WriteLine(string.Format("App file to delete: {0}", file));
+                    File.Delete(file);
+                }
+                catch (Exception e)
+                {
+                    SWriter.WriteLine("App deleting file crashed: {0}", e.Message);
+                }
+            }
+        }
+
+        SWriter.WriteLine("App files cleaned from previous iterations of app");
+
+        foreach (var file in filesAfterIgnoreModOptions)
+        {
+            SWriter.WriteLine(string.Format("App file to clean up: {0}", file));
+
+            string newFile;
             if (ConfigManager.isDebug)
             {
-                tempFile = file.Substring(0, file.IndexOf(".")) + "-Test.reds";
+                newFile = file.Substring(0, file.IndexOf('.', file.IndexOf('.') + 1)) + "-Test.reds";
             }
             else
             {
                 // "D:\\Work\\CPMods\\Projects\\CPModCleaner\\bin\\Debug\\net6.0\\UpgradeWeaponsUnlocked\\r6\\scripts\\UpgradeWeaponsUnlocked\\UpgradeWeaponsUnlocked.reds"
                 var fileName = Path.GetFileName(file);
-                var newFile = file.Substring(0, file.IndexOf(fileName, file.IndexOf('.') - fileName.Length));
-                tempFile = newFile + fileName.Substring(0, fileName.IndexOf('.')) + "Cleaned.reds";
+                var newFileName = file.Substring(0, file.IndexOf(fileName, file.IndexOf('.') - fileName.Length));
+                newFile = newFileName + fileName.Substring(0, fileName.IndexOf('.')) + "Cleaned.reds";
             }
 
-            SWriter.WriteLine(string.Format("App file to clean up: {0}", tempFile));
-
             using (var sr = new StreamReader(file))
-            using (StreamWriter sw = new StreamWriter(tempFile))
+            using (StreamWriter sw = new StreamWriter(newFile, true))
             {
                 {
                     string line;
@@ -75,10 +106,10 @@ using (StreamWriter SWriter = new StreamWriter(debugFile))
                 }
             }
 
-            SWriter.WriteLine(string.Format("App file to cleaned: {0}", tempFile));
+            SWriter.WriteLine(string.Format("App file after cleaning up: {0}", newFile));
         }
 
-        SWriter.WriteLine("App files cleaned");
+        SWriter.WriteLine("App files are all cleaned");
     }
     catch (Exception e)
     {

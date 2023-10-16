@@ -1,4 +1,5 @@
-﻿using System.Xml.Linq;
+﻿using System.Diagnostics;
+using System.Xml.Linq;
 public class ConfigManager
 {
     public ConfigManager()
@@ -38,6 +39,14 @@ public class ConfigManager
     public Dictionary<string, string>? FilterOptions { get; set; }
     public Dictionary<string, string>? SupportedModOptions { get; set; }
 
+    public List<string>? IgnoreModOptions { get; set; }
+
+    [Conditional("DEBUG")]
+    private void SetDebugOverConfig()
+    {
+        _isDebug = true;
+    }
+
     private void InitiateConfigValues(XDocument doc)
     {
         ReadConfigs(doc);
@@ -48,7 +57,11 @@ public class ConfigManager
         if (Config != null || doc != null)
         {
             var rootDebug = Config.Root.Attribute("isDebug");
+#if DEBUG
+            SetDebugOverConfig();
+#else
             _isDebug = rootDebug == null ? true : Convert.ToBoolean(rootDebug.Value);
+#endif
 
             var settings = Config.Descendants("removeSettings").Descendants().Select(i => new KeyValuePair<string, string>(i.Attribute("name").Value.ToString(),
                 i.Attribute("value").Value.ToString())).ToList();
@@ -59,6 +72,8 @@ public class ConfigManager
                 i.Attribute("fileType").Value.ToString())).ToList();
 
             SupportedModOptions = mods.ToDictionary(pair => pair.Key, pair => pair.Value);
+
+            IgnoreModOptions = Config.Descendants("ignoreSettings").Descendants().Select(i => i.Attribute("name").Value.ToString()).ToList();
         }
     }
 }
